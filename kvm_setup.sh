@@ -313,22 +313,6 @@ qemu-system-x86_64 \
     -net user,hostfwd=tcp::2222-:22
 EOF
 
-# Other scripts remain the same...
-cat > ~/kernel-dev/ssh-vm.sh << 'EOF'
-#!/bin/bash
-ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@localhost
-EOF
-
-cat > ~/kernel-dev/copy-to-vm.sh << 'EOF'
-#!/bin/bash
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 <file-to-copy> [destination]"
-    exit 1
-fi
-DEST=${2:-"~/"}
-scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$1" ubuntu@localhost:"$DEST"
-EOF
-
 cat > ~/kernel-dev/reset-vm.sh << 'EOF'
 #!/bin/bash
 cd ~/kernel-dev/test-vms
@@ -353,6 +337,5 @@ echo "  • Rootkit detection utilities"
 echo "  • GDB with GEF"
 echo ""
 echo "Start VM: ~/kernel-dev/start-test-vm.sh"
-echo "SSH to VM: ~/kernel-dev/ssh-vm.sh"
 echo ""
 echo -e "${RED}Test kernel modules in a KVM only, never on your host${NC}"
