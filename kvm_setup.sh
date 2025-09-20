@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kernel Development Setup Script with Analysis Tools for DFIR/Red Team
+# Kernel Development Setup Script with QEMU Test VM
 
 set -e
 
@@ -10,16 +10,12 @@ NC='\033[0m'
 
 echo "=== Kernel Development Environment Setup ==="
 
-# Install QEMU and KVM
-echo -e "${GREEN}[+] Installing QEMU/KVM...${NC}"
+# Install QEMU 
+echo -e "${GREEN}[+] Installing QEMU...${NC}"
 sudo apt update
 sudo apt install -y \
     qemu-system-x86 \
     qemu-utils \
-    libvirt-daemon-system \
-    libvirt-clients \
-    bridge-utils \
-    virt-manager \
     cloud-image-utils
 
 # Install kernel development tools on host
@@ -63,6 +59,9 @@ password: ubuntu
 chpasswd: { expire: False }
 ssh_pwauth: True
 
+package_update: true
+package_upgrade: false
+
 packages:
   # Build essentials for kernel modules
   - build-essential
@@ -76,15 +75,11 @@ packages:
   - linux-tools-generic
   - linux-tools-common
   - trace-cmd
-  - kernelshark
   - systemtap
   - systemtap-runtime
   - crash
   - makedumpfile
   - kmod
-  
-  # Module analysis
-  - module-init-tools
   
   # Network driver testing
   - tcpdump
@@ -96,7 +91,6 @@ packages:
   # System monitoring
   - sysstat
   - htop
-  - iotop
   - procinfo
   
   # Rootkit detection
@@ -284,9 +278,9 @@ cat > ~/kernel-dev/start-test-vm.sh << 'EOF'
 #!/bin/bash
 cd ~/kernel-dev/test-vms
 
-echo "Starting Kernel Analysis VM..."
-echo "Login: ubuntu / Password: ubuntu"
-echo "SSH: ssh kernel-vm"
+echo "Starting Kernel Test VM..."
+echo "Login: ubuntu / Password: ubuntu"  
+echo "SSH: ssh kernel-vm (after VM boots)"
 echo "Exit: Ctrl-A, then X"
 echo ""
 echo "First boot: 2-3 minutes to install tools"
@@ -299,23 +293,13 @@ qemu-system-x86_64 \
     -cdrom cloud-init.iso \
     -nographic \
     -serial mon:stdio \
-    -net nic \
-    -net user,hostfwd=tcp::2222-:22 \
-    -enable-kvm 2>/dev/null || \
-qemu-system-x86_64 \
-    -m 2G \
-    -smp 2 \
-    -hda test-vm.qcow2 \
-    -cdrom cloud-init.iso \
-    -nographic \
-    -serial mon:stdio \
-    -net nic \
-    -net user,hostfwd=tcp::2222-:22
+    -net nic -net user,hostfwd=tcp::2222-:22
 EOF
 
 cat > ~/kernel-dev/reset-vm.sh << 'EOF'
 #!/bin/bash
 cd ~/kernel-dev/test-vms
+echo "Resetting VM to clean state..."
 rm -f test-vm.qcow2
 qemu-img create -f qcow2 -b ubuntu-22.04-server-cloudimg-amd64.img -F qcow2 test-vm.qcow2 10G
 echo "VM reset complete"
@@ -345,6 +329,20 @@ else
     echo "SSH config for kernel-vm already exists"
 fi
 
+# Add VM control aliases to .bashrc
+echo -e "${GREEN}[+] Adding VM control aliases...${NC}"
+if ! grep -q "# Kernel VM aliases" ~/.bashrc; then
+    cat >> ~/.bashrc << 'BASHRC_ALIASES'
+
+# Kernel VM aliases
+alias vm-start='cd ~/kernel-dev/test-vms && qemu-system-x86_64 -m 2G -smp 2 -hda test-vm.qcow2 -cdrom cloud-init.iso -nographic -serial mon:stdio -net nic -net user,hostfwd=tcp::2222-:22'
+alias vm-reset='cd ~/kernel-dev/test-vms && rm -f test-vm.qcow2 && qemu-img create -f qcow2 -b ubuntu-22.04-server-cloudimg-amd64.img -F qcow2 test-vm.qcow2 10G && echo "VM reset complete"'
+BASHRC_ALIASES
+    echo "VM aliases added to ~/.bashrc"
+else
+    echo "VM aliases already exist in ~/.bashrc"
+fi
+
 # Clean up
 cd ~/kernel-dev/test-vms
 rm -f user-data meta-data
@@ -352,18 +350,22 @@ rm -f user-data meta-data
 # Done
 echo -e "\n${GREEN}=== Setup Complete ===${NC}"
 echo ""
-echo "Kernel analysis VM configured with:"
+echo "Kernel Test VM configured with:"
 echo "  • Ftrace & kernel tracing"
 echo "  • Module development tools"
 echo "  • Rootkit detection utilities"
 echo "  • GDB with GEF"
 echo ""
 echo -e "${YELLOW}Commands:${NC}"
-echo "  Start VM:        ~/kernel-dev/start-test-vm.sh"
-echo "  SSH to VM:       ssh kernel-vm"
-echo "  Copy to VM:      scp file.c kernel-vm:~/"
-echo "  Reset VM:        ~/kernel-dev/reset-vm.sh"
+echo "  ssh kernel-vm                   SSH to VM (after boot)"
+echo "  scp file kernel-vm:~/           Copy files to VM"
+echo ""
+echo -e "${YELLOW}Or use aliases (after sourcing .bashrc):${NC}"
+echo "  vm-start                        Start the VM"
+echo "  vm-reset                        Reset VM"
 echo ""
 echo "SSH master socket configured for faster connections"
 echo ""
-echo -e "${RED}Test kernel modules in a KVM only, never on your host${NC}"
+echo -e "${YELLOW}Note: Run 'source ~/.bashrc' to activate aliases${NC}"
+echo ""
+echo -e "${RED}Test kernel modules in the VM only, never on your host${NC}"
