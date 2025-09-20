@@ -286,7 +286,7 @@ cd ~/kernel-dev/test-vms
 
 echo "Starting Kernel Analysis VM..."
 echo "Login: ubuntu / Password: ubuntu"
-echo "SSH: ssh -p 2222 ubuntu@localhost"
+echo "SSH: ssh kernel-vm"
 echo "Exit: Ctrl-A, then X"
 echo ""
 echo "First boot: 2-3 minutes to install tools"
@@ -323,6 +323,28 @@ EOF
 
 chmod +x ~/kernel-dev/*.sh
 
+# Configure SSH for easy access
+echo -e "${GREEN}[+] Configuring SSH access...${NC}"
+mkdir -p ~/.ssh
+touch ~/.ssh/config
+if ! grep -q "Host kernel-vm" ~/.ssh/config; then
+    cat >> ~/.ssh/config << 'SSHCONFIG'
+Host kernel-vm
+    HostName localhost
+    Port 2222
+    User ubuntu
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    ControlMaster auto
+    ControlPath ~/.ssh/kernel-vm-%r@%h:%p
+    ControlPersist 10m
+SSHCONFIG
+    chmod 600 ~/.ssh/config
+    echo "SSH config added for 'kernel-vm'"
+else
+    echo "SSH config for kernel-vm already exists"
+fi
+
 # Clean up
 cd ~/kernel-dev/test-vms
 rm -f user-data meta-data
@@ -336,6 +358,12 @@ echo "  • Module development tools"
 echo "  • Rootkit detection utilities"
 echo "  • GDB with GEF"
 echo ""
-echo "Start VM: ~/kernel-dev/start-test-vm.sh"
+echo -e "${YELLOW}Commands:${NC}"
+echo "  Start VM:        ~/kernel-dev/start-test-vm.sh"
+echo "  SSH to VM:       ssh kernel-vm"
+echo "  Copy to VM:      scp file.c kernel-vm:~/"
+echo "  Reset VM:        ~/kernel-dev/reset-vm.sh"
+echo ""
+echo "SSH master socket configured for faster connections"
 echo ""
 echo -e "${RED}Test kernel modules in a KVM only, never on your host${NC}"
