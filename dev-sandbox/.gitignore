@@ -1,0 +1,57 @@
+# Build artifacts
+build/
+bin/
+
+# Compiled binaries
+*_arm
+*_aarch64
+*_riscv64
+*_mips
+*_mipsel
+
+# Object files
+*.o
+*.obj
+*.a
+*.so
+*.dll
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Core dumps
+core
+core.*
+
+# IDE files
+.vscode/
+!.vscode/tasks.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Logs
+*.log
+
+# Dev container volumes (if using Docker Compose)
+.devcontainer/docker-compose.override.yml
