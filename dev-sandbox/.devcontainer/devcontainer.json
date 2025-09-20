@@ -1,0 +1,38 @@
+{
+    "name": "Dev Sandbox - Cross-Platform Development",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": "."
+    },
+    "runArgs": [
+        "--network=host",
+        "--cap-add=NET_ADMIN",
+        "--cap-add=NET_RAW",
+        "--cap-add=SYS_PTRACE"
+    ],
+    "mounts": [
+        "source=/home/developer/kernel-dev,target=/workspaces/dev-sandbox/kernel-dev,type=bind"
+    ],
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-python.python",
+                "golang.go",
+                "ms-vscode-remote.remote-containers"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "/home/devuser/venv/bin/python",
+                "terminal.integrated.defaultProfile.linux": "zsh"
+            }
+        }
+    },
+    "remoteUser": "devuser",
+    "containerEnv": {
+        "PATH": "/home/devuser/venv/bin:/usr/local/go/bin:/home/devuser/go/bin:/opt/android-ndk/toolchains/llvm/prebuilt/linux-x86_64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "GOPATH": "/workspace/go",
+        "GOROOT": "/usr/local/go"
+    },
+    "postCreateCommand": "echo 'Dev Sandbox Container Ready!'",
+    "shutdownAction": "stopContainer"
+}
