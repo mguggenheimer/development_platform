@@ -1,5 +1,5 @@
 #!/bin/bash
-# Kernel Development Setup Script with Ubuntu VM for Testing
+# Kernel Development Setup Script with Analysis Tools for DFIR/Red Team
 
 set -e
 
@@ -22,7 +22,7 @@ sudo apt install -y \
     virt-manager \
     cloud-image-utils
 
-# Install kernel development tools
+# Install kernel development tools on host
 echo -e "${GREEN}[+] Installing kernel build tools...${NC}"
 sudo apt install -y \
     build-essential \
@@ -55,18 +55,217 @@ fi
 echo -e "${GREEN}[+] Creating VM disk...${NC}"
 qemu-img create -f qcow2 -b ubuntu-22.04-server-cloudimg-amd64.img -F qcow2 test-vm.qcow2 10G
 
-# Create cloud-init configuration
-echo -e "${GREEN}[+] Creating cloud-init configuration...${NC}"
+# Create cloud-init configuration with kernel analysis tools
+echo -e "${GREEN}[+] Creating cloud-init configuration with kernel analysis tools...${NC}"
 cat > user-data << 'EOF'
 #cloud-config
 password: ubuntu
 chpasswd: { expire: False }
 ssh_pwauth: True
+
 packages:
+  # Build essentials for kernel modules
   - build-essential
   - linux-headers-generic
   - make
   - gcc
+  - git
+  - vim
+  
+  # Kernel debugging and tracing
+  - linux-tools-generic
+  - linux-tools-common
+  - trace-cmd
+  - kernelshark
+  - systemtap
+  - systemtap-runtime
+  - crash
+  - makedumpfile
+  - kmod
+  
+  # Module analysis
+  - module-init-tools
+  
+  # Network driver testing
+  - tcpdump
+  - netcat-openbsd
+  - ethtool
+  - iproute2
+  - net-tools
+  
+  # System monitoring
+  - sysstat
+  - htop
+  - iotop
+  - procinfo
+  
+  # Rootkit detection
+  - unhide
+  
+  # Debugging
+  - gdb
+  - python3-pip
+  - python3-dev
+
+runcmd:
+  # Install GEF for kernel debugging
+  - wget -q -O /home/ubuntu/.gdbinit-gef.py https://raw.githubusercontent.com/hugsy/gef/main/gef.py
+  - echo "source /home/ubuntu/.gdbinit-gef.py" >> /home/ubuntu/.gdbinit
+  - chown ubuntu:ubuntu /home/ubuntu/.gdbinit*
+  
+  # Enable kernel debugging features
+  - |
+    cat >> /etc/sysctl.conf << 'SYSCTL'
+    # Enable kernel debugging
+    kernel.dmesg_restrict = 0
+    kernel.kptr_restrict = 0
+    kernel.yama.ptrace_scope = 0
+    kernel.panic_on_oops = 0
+    kernel.softlockup_panic = 0
+    SYSCTL
+    sysctl -p
+  
+  # Mount debugging filesystems
+  - mount -t debugfs none /sys/kernel/debug 2>/dev/null || true
+  - mount -t tracefs none /sys/kernel/tracing 2>/dev/null || true
+  
+  # Create kernel analysis helper functions
+  - |
+    cat >> /home/ubuntu/.bashrc << 'BASHRC'
+    
+    # Color output
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    NC='\033[0m'
+    
+    # Module management
+    load_module() {
+        echo -e "${GREEN}[+] Loading module $1${NC}"
+        sudo insmod "$1" && sudo dmesg | tail -10
+    }
+    
+    unload_module() {
+        echo -e "${YELLOW}[-] Unloading module $1${NC}"
+        sudo rmmod "$1" && echo "Module unloaded"
+    }
+    
+    # Module analysis
+    analyze_module() {
+        echo -e "${GREEN}=== Module Analysis: $1 ===${NC}"
+        echo "-- modinfo --"
+        modinfo "$1" 2>/dev/null || modinfo "$1.ko" 2>/dev/null || echo "Not found"
+        echo "-- Dependencies --"
+        lsmod | grep -E "^$1|$1"
+        echo "-- Parameters --"
+        ls -la /sys/module/"$1"/parameters/ 2>/dev/null || echo "No parameters exposed"
+        echo "-- Sections --"
+        ls -la /sys/module/"$1"/sections/ 2>/dev/null || echo "No sections exposed"
+        echo "-- Kernel taint --"
+        cat /proc/sys/kernel/tainted
+        echo "(0 = untainted, see kernel/panic.c for flag meanings)"
+    }
+    
+    # Ftrace module functions
+    trace_module() {
+        echo -e "${GREEN}[+] Setting up ftrace for module $1${NC}"
+        sudo sh -c "echo 0 > /sys/kernel/tracing/tracing_on"
+        sudo sh -c "echo > /sys/kernel/tracing/trace"
+        sudo sh -c "echo ':mod:$1' > /sys/kernel/tracing/set_ftrace_filter"
+        sudo sh -c "echo function_graph > /sys/kernel/tracing/current_tracer"
+        sudo sh -c "echo 1 > /sys/kernel/tracing/tracing_on"
+        echo "Tracing enabled. Load your module now."
+        echo "View with: sudo cat /sys/kernel/tracing/trace"
+        echo "Stop with: sudo sh -c 'echo 0 > /sys/kernel/tracing/tracing_on'"
+    }
+    
+    # Check for hidden modules
+    check_hidden() {
+        echo -e "${YELLOW}[!] Checking for hidden modules${NC}"
+        echo "-- lsmod vs /proc/modules --"
+        diff -u <(lsmod | tail -n +2 | awk '{print $1}' | sort) \
+                <(cat /proc/modules | awk '{print $1}' | sort) || echo "No differences"
+        echo "-- /sys/module vs /proc/modules --"
+        diff -u <(ls /sys/module | sort) \
+                <(cat /proc/modules | awk '{print $1}' | sort) || echo "No differences"
+    }
+    
+    # Monitor kernel logs
+    monitor_kernel() {
+        echo -e "${GREEN}[+] Monitoring kernel logs${NC}"
+        sudo dmesg -w
+    }
+    
+    # Quick module template
+    create_module() {
+        if [ -z "$1" ]; then
+            echo "Usage: create_module <name>"
+            return
+        fi
+        mkdir -p "$1"
+        cat > "$1/$1.c" << 'MODULE'
+    #include <linux/init.h>
+    #include <linux/module.h>
+    #include <linux/kernel.h>
+    
+    static int __init mod_init(void)
+    {
+        pr_info("Module loaded\n");
+        return 0;
+    }
+    
+    static void __exit mod_exit(void)
+    {
+        pr_info("Module unloaded\n");
+    }
+    
+    module_init(mod_init);
+    module_exit(mod_exit);
+    
+    MODULE_LICENSE("GPL");
+    MODULE_DESCRIPTION("Test Module");
+    MODULE
+        cat > "$1/Makefile" << 'MAKEFILE'
+    obj-m += NAME.o
+    
+    all:
+    	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+    
+    clean:
+    	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+    MAKEFILE
+        sed -i "s/NAME/$1/g" "$1/Makefile"
+        echo "Module template created in $1/"
+    }
+    
+    # Aliases for quick access
+    alias km='sudo dmesg | tail -20'
+    alias kmc='sudo dmesg -C'
+    alias trace='cd /sys/kernel/tracing'
+    alias modules='lsmod | less'
+    
+    export PS1='\[\033[01;32m\]kernel-vm\[\033[00m\]:\[\033[01;34m\]\w\[\033[00m\]$ '
+    
+    echo -e "${GREEN}Kernel analysis environment ready!${NC}"
+    echo "Commands: load_module, unload_module, analyze_module, trace_module, check_hidden"
+    BASHRC
+    chown ubuntu:ubuntu /home/ubuntu/.bashrc
+
+final_message: |
+  Kernel Test VM Ready!
+  
+  Tools installed:
+  - Kernel build environment
+  - Ftrace & SystemTap
+  - GDB with GEF
+  - Module analysis utilities
+  
+  Quick start:
+  - create_module <name>: Generate module template
+  - load_module <file>: Load kernel module
+  - analyze_module <name>: Inspect loaded module
+  - trace_module <name>: Trace module functions
+  - check_hidden: Look for rootkit modules
 EOF
 
 cat > meta-data << 'EOF'
@@ -85,14 +284,24 @@ cat > ~/kernel-dev/start-test-vm.sh << 'EOF'
 #!/bin/bash
 cd ~/kernel-dev/test-vms
 
-echo "Starting Ubuntu 22.04 test VM..."
+echo "Starting Kernel Analysis VM..."
 echo "Login: ubuntu / Password: ubuntu"
-echo "SSH available on port 2222 after boot"
-echo "To exit QEMU: Press Ctrl-A, then X"
+echo "SSH: ssh -p 2222 ubuntu@localhost"
+echo "Exit: Ctrl-A, then X"
 echo ""
-echo "First boot will take some time to initialize..."
+echo "First boot: 2-3 minutes to install tools"
 echo ""
 
+qemu-system-x86_64 \
+    -m 2G \
+    -smp 2 \
+    -hda test-vm.qcow2 \
+    -cdrom cloud-init.iso \
+    -nographic \
+    -serial mon:stdio \
+    -net nic \
+    -net user,hostfwd=tcp::2222-:22 \
+    -enable-kvm 2>/dev/null || \
 qemu-system-x86_64 \
     -m 2G \
     -smp 2 \
@@ -104,160 +313,46 @@ qemu-system-x86_64 \
     -net user,hostfwd=tcp::2222-:22
 EOF
 
-# Script to SSH into the VM
+# Other scripts remain the same...
 cat > ~/kernel-dev/ssh-vm.sh << 'EOF'
 #!/bin/bash
-echo "Connecting to test VM via SSH..."
-echo "Password: ubuntu"
 ssh -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@localhost
 EOF
 
-# Script to copy files to VM
 cat > ~/kernel-dev/copy-to-vm.sh << 'EOF'
 #!/bin/bash
 if [ $# -eq 0 ]; then
     echo "Usage: $0 <file-to-copy> [destination]"
-    echo "Example: $0 hello.ko"
-    echo "Example: $0 hello.ko /tmp/"
     exit 1
 fi
-
 DEST=${2:-"~/"}
-echo "Copying $1 to VM:$DEST"
-echo "Password: ubuntu"
 scp -P 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$1" ubuntu@localhost:"$DEST"
 EOF
 
-# Script to reset VM to clean state
 cat > ~/kernel-dev/reset-vm.sh << 'EOF'
 #!/bin/bash
 cd ~/kernel-dev/test-vms
-echo "Resetting VM to clean state..."
 rm -f test-vm.qcow2
 qemu-img create -f qcow2 -b ubuntu-22.04-server-cloudimg-amd64.img -F qcow2 test-vm.qcow2 10G
-echo "VM reset complete. Start with: ~/kernel-dev/start-test-vm.sh"
+echo "VM reset complete"
 EOF
 
 chmod +x ~/kernel-dev/*.sh
 
-# Create sample kernel module
-echo -e "${GREEN}[+] Creating sample kernel module...${NC}"
-mkdir -p ~/kernel-dev/modules/hello
-cat > ~/kernel-dev/modules/hello/hello.c << 'EOF'
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-
-static int __init hello_init(void)
-{
-    printk(KERN_INFO "HELLO: Module loaded\n");
-    printk(KERN_INFO "HELLO: Running on kernel %s\n", UTS_RELEASE);
-    return 0;
-}
-
-static void __exit hello_exit(void)
-{
-    printk(KERN_INFO "HELLO: Module unloaded\n");
-}
-
-module_init(hello_init);
-module_exit(hello_exit);
-
-MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("Test Kernel Module");
-MODULE_AUTHOR("Developer");
-MODULE_VERSION("1.0");
-EOF
-
-cat > ~/kernel-dev/modules/hello/Makefile << 'EOF'
-obj-m += hello.o
-
-KDIR ?= /lib/modules/$(shell uname -r)/build
-PWD := $(shell pwd)
-
-all:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
-
-clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
-
-install:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules_install
-
-help:
-	@echo "make       - Build module"
-	@echo "make clean - Clean build files"
-EOF
-
-# Download Linux 6.1 LTS kernel source
-echo -e "${GREEN}[+] Downloading Linux 6.1 LTS kernel source...${NC}"
-cd ~/kernel-dev/kernels
-
-if [ ! -d linux-6.1 ]; then
-    if [ ! -f linux-6.1.tar.xz ]; then
-        wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.1.tar.xz
-    fi
-    echo "Extracting kernel source (this may take some time)..."
-    tar -xf linux-6.1.tar.xz
-else
-    echo "Kernel source already exists"
-fi
-
-# Clean up temporary files
+# Clean up
 cd ~/kernel-dev/test-vms
 rm -f user-data meta-data
 
-# Verification
-echo -e "\n${GREEN}=== Installation Verification ===${NC}"
-
-echo -n "QEMU: "
-if command -v qemu-system-x86_64 &> /dev/null; then
-    qemu-system-x86_64 --version | head -1
-else
-    echo -e "${RED}Not found${NC}"
-fi
-
-echo -n "Kernel headers: "
-if [ -d /lib/modules/$(uname -r)/build ]; then
-    echo -e "${GREEN}Installed${NC}"
-else
-    echo -e "${RED}Missing${NC}"
-fi
-
-echo -n "Ubuntu VM image: "
-if [ -f ~/kernel-dev/test-vms/ubuntu-22.04-server-cloudimg-amd64.img ]; then
-    echo -e "${GREEN}Ready${NC}"
-else
-    echo -e "${RED}Missing${NC}"
-fi
-
-echo -n "Kernel source: "
-if [ -d ~/kernel-dev/kernels/linux-6.1 ]; then
-    echo -e "${GREEN}Linux 6.1 LTS ready${NC}"
-else
-    echo -e "${RED}Missing${NC}"
-fi
-
-# Final instructions
+# Done
 echo -e "\n${GREEN}=== Setup Complete ===${NC}"
 echo ""
-echo "Directory structure:"
-echo "  ~/kernel-dev/modules/   - Kernel modules"
-echo "  ~/kernel-dev/test-vms/  - Ubuntu 22.04 test VM"
-echo "  ~/kernel-dev/kernels/   - Linux 6.1 LTS source"
+echo "Kernel analysis VM configured with:"
+echo "  • Ftrace & kernel tracing"
+echo "  • Module development tools"
+echo "  • Rootkit detection utilities"
+echo "  • GDB with GEF"
 echo ""
-echo -e "${YELLOW}Available workflow:${NC}"
-echo "  1. Start VM:      ~/kernel-dev/start-test-vm.sh"
-echo "  2. SSH to VM:     ~/kernel-dev/ssh-vm.sh"
-echo "  3. Build modules directly in VM or copy from dev container"
-echo "  4. Test safely in VM environment"
+echo "Start VM: ~/kernel-dev/start-test-vm.sh"
+echo "SSH to VM: ~/kernel-dev/ssh-vm.sh"
 echo ""
-echo -e "${YELLOW}Helper scripts:${NC}"
-echo "  start-test-vm.sh - Start the Ubuntu VM"
-echo "  ssh-vm.sh        - SSH into the VM"
-echo "  copy-to-vm.sh    - Copy files to VM"
-echo "  reset-vm.sh      - Reset VM to clean state"
-echo ""
-echo -e "${YELLOW}Note:${NC} Develop modules in the dev container, then build in the VM for correct kernel version matching"
-echo ""
-echo -e "${RED}WARNING: Always test kernel modules inside the vm, never on the host${NC}"
+echo -e "${RED}Test kernel modules in a KVM only, never on your host${NC}"
