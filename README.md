@@ -11,7 +11,7 @@ Once code loads, click "reopen in dev container"
 
 
 Primary reference links:
-https://elixir.bootlin.com/linux/v6.16.7/source
+https://elixir.bootlin.com/linux/v6.16.7/source\n
 https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html
 https://www.felixcloutier.com/x86/
 https://www.agner.org/optimize/
