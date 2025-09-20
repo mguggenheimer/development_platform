@@ -5,5 +5,5 @@ scripts and configs to set up containerized/kvm development spaces on a linux ba
 chmod +x kvm_setup.sh && ./kvm_setup.sh
 
 # dev_sandbox
-~/dev-sandbox$ code .
+~/dev-sandbox$ code .\n
 Once code loads, click "reopen in dev container"
